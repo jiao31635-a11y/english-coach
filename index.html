@@ -1,7 +1,7 @@
 ﻿<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Voice English Coach</title>
+    <title>AI Voice Coach 2.0</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Material Icons & Google Fonts -->
@@ -48,7 +48,7 @@
                 <div class="flex items-center gap-3">
                     <span class="material-icons text-indigo-400 text-3xl">record_voice_over</span>
                     <div>
-                        <h1 class="font-bold text-lg leading-tight">AI Voice Coach</h1>
+                        <h1 class="font-bold text-lg leading-tight">AI Voice Coach 2.0</h1>
                         <p class="text-xs text-slate-400">Your interactive spoken English tutor</p>
                     </div>
                 </div>
@@ -81,14 +81,46 @@
                         </select>
                     </div>
                     <div>
+                        <label class="block text-xs text-slate-400 mb-1.5 font-medium">Conversation Mode</label>
+                        <select id="conversation-mode" class="w-full bg-slate-800 border border-slate-700 text-slate-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all">
+                            <option value="push">Push to Talk</option>
+                            <option value="continuous">Continuous Conversation</option>
+                        </select>
+                    </div>
+                    <div>
                         <label class="block text-xs text-slate-400 mb-1.5 font-medium">Auto-Speak Coach's Reply</label>
                         <div class="flex items-center gap-3 py-2">
                             <label class="relative inline-flex items-center cursor-pointer">
                                 <input type="checkbox" id="auto-speak" class="sr-only peer" checked="">
-                                <div class="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:width-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                                <div class="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
                             </label>
                             <span class="text-xs text-slate-300">Turn on Speech Synthesis (TTS)</span>
                         </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1.5 font-medium">Coach Accent</label>
+                        <select id="accent-selector" class="w-full bg-slate-800 border border-slate-700 text-slate-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all">
+                            <option value="en-US">American English</option>
+                            <option value="en-GB">British English</option>
+                            <option value="en-AU">Australian English</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1.5 font-medium">Speaking Speed</label>
+                        <select id="speech-speed" class="w-full bg-slate-800 border border-slate-700 text-slate-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all">
+                            <option value="0.75">0.75x</option>
+                            <option value="1" selected>1.0x</option>
+                            <option value="1.25">1.25x</option>
+                            <option value="1.5">1.5x</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1.5 font-medium">Silence Detection</label>
+                        <select id="silence-duration" class="w-full bg-slate-800 border border-slate-700 text-slate-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-all">
+                            <option value="1500">1.5 seconds</option>
+                            <option value="2000" selected>2 seconds</option>
+                            <option value="3000">3 seconds</option>
+                        </select>
                     </div>
                 </div>
 
@@ -138,6 +170,11 @@
                         <span id="record-icon" class="material-icons text-4xl">mic</span>
                     </button>
                     <span id="record-label" class="text-xs text-slate-400 font-medium uppercase tracking-wider">Tap to Speak</span>
+                    <button id="continuous-btn" class="hidden bg-gradient-to-r from-indigo-600 to-violet-500 hover:from-indigo-500 hover:to-violet-400 text-white rounded-xl py-3 px-5 text-sm font-semibold items-center justify-center gap-2 transition-all shadow-lg shadow-indigo-500/20 focus:outline-none">
+                        <span class="material-icons text-sm">all_inclusive</span>
+                        <span id="continuous-btn-label">Start Continuous Conversation</span>
+                    </button>
+                    <span id="conversation-status" class="text-[10px] text-slate-500 font-semibold uppercase tracking-wider">Conversation Stopped</span>
                 </div>
             </div>
 
@@ -241,20 +278,37 @@
         const state = {
             currentScenario: 'daily_smalltalk',
             chatHistory: [], // Structure: { role: 'coach'|'user', text: '' }
-            recordingState: 'idle', // idle, listening, loading
+            recordingState: 'idle', // idle, listening, loading, speaking, paused
+            recognitionRunning: false,
+            recognitionStopReason: 'idle',
+            pendingTranscript: '',
+            lastSubmittedTranscript: '',
+            silenceTimer: null,
+            continuousMode: false,
+            continuousActive: false,
+            silenceDuration: 2000,
+            speechRate: 1,
+            accent: 'en-US',
             autoSpeak: true,
             apiKey: '' // User-provided Gemini API key; never hard-code keys in this file
         };
 
         // UI references
         const scenarioSelector = document.getElementById('scenario-selector');
+        const conversationModeSelect = document.getElementById('conversation-mode');
         const autoSpeakCheckbox = document.getElementById('auto-speak');
         const apiKeyInput = document.getElementById('api-key-input');
         const toggleKeyVisibilityBtn = document.getElementById('toggle-key-visibility');
         const visibilityIcon = document.getElementById('visibility-icon');
+        const accentSelector = document.getElementById('accent-selector');
+        const speechSpeedSelect = document.getElementById('speech-speed');
+        const silenceDurationSelect = document.getElementById('silence-duration');
         const recordBtn = document.getElementById('record-btn');
         const recordIcon = document.getElementById('record-icon');
         const recordLabel = document.getElementById('record-label');
+        const continuousBtn = document.getElementById('continuous-btn');
+        const continuousBtnLabel = document.getElementById('continuous-btn-label');
+        const conversationStatus = document.getElementById('conversation-status');
         const avatarContainer = document.getElementById('avatar-container');
         const voiceIcon = document.getElementById('voice-icon');
         const voiceStatusText = document.getElementById('voice-status-text');
@@ -334,14 +388,15 @@
             reportEmpty.classList.remove('hidden');
             reportContent.classList.add('hidden');
             
-            // Auto Speak welcome message if enabled
-            if (state.autoSpeak) {
+            // Auto Speak welcome message if enabled in Push to Talk mode.
+            if (state.autoSpeak && !state.continuousActive) {
                 speakText(config.welcome);
             }
         }
 
         // Tap scenario change handler
         scenarioSelector.addEventListener('change', (e) => {
+            if (state.continuousActive) stopContinuousConversation();
             state.currentScenario = e.target.value;
             resetSession();
         });
@@ -367,6 +422,7 @@
 
         // Restart conversation handler
         resetSessionBtn.addEventListener('click', () => {
+            if (state.continuousActive) stopContinuousConversation();
             resetSession();
         });
 
@@ -398,9 +454,111 @@
             chatMessages.scrollTop = chatMessages.scrollHeight;
         }
 
-        // Speech Recognition Mechanics
+        function configureRecognition() {
+            if (!recognition) return;
+            recognition.continuous = false;
+            recognition.lang = state.accent;
+            recognition.interimResults = true;
+        }
+
+        function normalizeTranscript(text) {
+            return (text || '').replace(/\s+/g, ' ').trim();
+        }
+
+        function isUsableTranscript(text) {
+            const normalized = normalizeTranscript(text);
+            if (normalized.length < 3) return false;
+            if (normalized.toLowerCase() === state.lastSubmittedTranscript.toLowerCase()) return false;
+            return /[a-zA-Z]/.test(normalized);
+        }
+
+        function clearSilenceTimer() {
+            if (state.silenceTimer) {
+                clearTimeout(state.silenceTimer);
+                state.silenceTimer = null;
+            }
+        }
+
+        function scheduleSilenceSubmit() {
+            clearSilenceTimer();
+            if (!state.continuousActive || state.recordingState !== 'listening') return;
+            state.silenceTimer = setTimeout(() => {
+                if (!state.recognitionRunning) {
+                    submitPendingTranscript();
+                    return;
+                }
+                stopRecognition('submit');
+            }, state.silenceDuration);
+        }
+
+        function submitPendingTranscript() {
+            clearSilenceTimer();
+            const transcript = normalizeTranscript(state.pendingTranscript);
+            state.pendingTranscript = '';
+            if (!isUsableTranscript(transcript)) {
+                if (state.continuousActive) {
+                    setRecordingUIState('paused');
+                    setTimeout(() => startListening('continuous'), 500);
+                }
+                return;
+            }
+            state.lastSubmittedTranscript = transcript;
+            processUserUtterance(transcript);
+        }
+
+        function getMicrophoneErrorMessage(err) {
+            const name = err?.name || err?.message || '';
+            if (name.includes('NotAllowedError') || name.includes('PermissionDeniedError')) {
+                return 'Microphone permission was denied. Please allow microphone access.';
+            }
+            if (name.includes('NotFoundError') || name.includes('DevicesNotFoundError')) {
+                return 'No microphone was found. Please connect or enable a microphone.';
+            }
+            if (name.includes('NotReadableError') || name.includes('TrackStartError')) {
+                return 'The microphone may be in use by another application.';
+            }
+            if (name === 'microphone-api-unavailable') {
+                return 'This browser cannot request microphone access. Please use Google Chrome over HTTPS.';
+            }
+            return 'Unable to start the microphone. Please check browser microphone settings.';
+        }
+
+        function stopRecognition(reason = 'manual') {
+            clearSilenceTimer();
+            state.recognitionStopReason = reason;
+            if (state.recognitionRunning && recognition) {
+                recognition.stop();
+            }
+        }
+
+        async function startListening(reason = 'push') {
+            if (!recognition) {
+                const rawResponse = prompt('Please type your spoken reply below (Browser microphone speech API unavailable):');
+                if (rawResponse) processUserUtterance(rawResponse);
+                return;
+            }
+            if (state.recordingState === 'speaking') return;
+            if (state.recognitionRunning || state.recordingState === 'listening') return;
+
+            try {
+                configureRecognition();
+                state.pendingTranscript = '';
+                state.recognitionStopReason = reason;
+                liveSpeechBox.innerText = 'Requesting microphone access...';
+                await requestMicrophoneAccess();
+                recognition.start();
+            } catch (err) {
+                console.error('Microphone permission error:', err?.name || err?.message || err);
+                state.continuousActive = false;
+                showMicrophoneError(getMicrophoneErrorMessage(err));
+                updateConversationModeUI();
+            }
+        }
+
+        // Speech recognition state is guarded so Chrome never receives duplicate start() calls.
         if (recognition) {
             recognition.onstart = () => {
+                state.recognitionRunning = true;
                 setRecordingUIState('listening');
             };
 
@@ -416,93 +574,188 @@
                     }
                 }
 
-                liveSpeechBox.innerText = finalTranscript || interimTranscript || "Listening for speech...";
-                
-                // If we get a final transcript, compile it
-                if (finalTranscript) {
-                    processUserUtterance(finalTranscript);
+                const newText = normalizeTranscript(finalTranscript || interimTranscript);
+                const visibleTranscript = normalizeTranscript(`${state.pendingTranscript} ${newText}`);
+                if (visibleTranscript) {
+                    state.pendingTranscript = visibleTranscript;
+                    liveSpeechBox.innerText = visibleTranscript;
+                    if (state.continuousActive) scheduleSilenceSubmit();
+                }
+
+                if (finalTranscript && !state.continuousActive) {
+                    stopRecognition('submit');
                 }
             };
 
             recognition.onerror = (event) => {
-                console.error("Speech recognition error:", event.error);
-                if (event.error === 'not-allowed') {
-                    liveSpeechBox.innerHTML = "<span class='text-rose-400 font-semibold'>Microphone Access Denied!</span> Please enable mic access in your browser settings to practice speaking.";
-                } else {
-                    liveSpeechBox.innerText = "Error listening. Tap the mic to try again.";
+                const error = event.error || 'unknown';
+                console.warn('Speech recognition error:', error);
+                state.recognitionRunning = false;
+                clearSilenceTimer();
+
+                if (error === 'no-speech') {
+                    if (state.continuousActive) {
+                        liveSpeechBox.innerText = 'No speech detected. Listening again...';
+                        setTimeout(() => startListening('continuous'), 700);
+                    } else {
+                        setRecordingUIState('idle');
+                    }
+                    return;
                 }
-                setRecordingUIState('idle');
+
+                if (error === 'aborted' && state.recognitionStopReason !== 'error') return;
+
+                if (error === 'network') {
+                    showMicrophoneError('Speech recognition service is temporarily unavailable.');
+                } else if (error === 'not-allowed' || error === 'service-not-allowed') {
+                    state.continuousActive = false;
+                    showMicrophoneError('Microphone permission was denied. Please allow microphone access.');
+                } else if (error === 'audio-capture') {
+                    state.continuousActive = false;
+                    showMicrophoneError('No microphone was found. Please connect or enable a microphone.');
+                } else {
+                    showMicrophoneError('Error listening. Tap the mic to try again.');
+                }
+                updateConversationModeUI();
             };
 
             recognition.onend = () => {
-                // Return interface to neutral if state remained listening (no final sentence caught)
+                const reason = state.recognitionStopReason;
+                state.recognitionRunning = false;
+                clearSilenceTimer();
+
+                if (reason === 'submit') {
+                    submitPendingTranscript();
+                    return;
+                }
+
+                if (state.continuousActive && reason !== 'manual' && reason !== 'permission' && reason !== 'tts') {
+                    setRecordingUIState('paused');
+                    setTimeout(() => startListening('continuous'), 700);
+                    return;
+                }
+
                 if (state.recordingState === 'listening') {
-                    setRecordingUIState('idle');
+                    setRecordingUIState(state.continuousActive ? 'paused' : 'idle');
                 }
             };
+        }
+
+        function updateConversationModeUI() {
+            state.continuousMode = conversationModeSelect.value === 'continuous';
+            continuousBtn.classList.toggle('hidden', !state.continuousMode);
+            continuousBtn.classList.toggle('flex', state.continuousMode);
+            recordBtn.classList.toggle('hidden', state.continuousMode && state.continuousActive);
+            continuousBtnLabel.innerText = state.continuousActive ? 'Stop Conversation' : 'Start Continuous Conversation';
+            if (!state.continuousActive || state.recordingState === 'idle') {
+                conversationStatus.innerText = state.continuousActive ? 'Continuous Conversation Active' : 'Conversation Stopped';
+            }
+            if (!state.continuousActive && state.recordingState === 'idle') {
+                recordLabel.innerText = state.continuousMode ? 'Push to Talk available when stopped' : 'Tap to Speak';
+            }
         }
 
         // UI State Switcher
         function setRecordingUIState(status) {
             state.recordingState = status;
             if (status === 'listening') {
-                recordBtn.className = "w-20 h-20 rounded-full bg-rose-600 hover:bg-rose-500 active:scale-95 transition-all flex justify-center items-center text-white shadow-xl shadow-rose-600/30 focus:outline-none";
-                recordIcon.innerText = "stop";
-                recordLabel.innerText = "Listening... Tap to finish";
-                avatarContainer.className = "w-36 h-36 rounded-full bg-gradient-to-tr from-rose-600 to-amber-500 flex flex-col justify-center items-center shadow-lg shadow-rose-500/20 border-4 border-slate-800 z-10 scale-105 duration-300";
-                voiceIcon.innerText = "graphic_eq";
-                voiceStatusText.innerText = "You Speak";
+                recordBtn.className = 'w-20 h-20 rounded-full bg-rose-600 hover:bg-rose-500 active:scale-95 transition-all flex justify-center items-center text-white shadow-xl shadow-rose-600/30 focus:outline-none';
+                recordIcon.innerText = 'stop';
+                recordLabel.innerText = state.continuousActive ? 'Listening... auto-submit after silence' : 'Listening... Tap to finish';
+                avatarContainer.className = 'w-36 h-36 rounded-full bg-gradient-to-tr from-rose-600 to-amber-500 flex flex-col justify-center items-center shadow-lg shadow-rose-500/20 border-4 border-slate-800 z-10 scale-105 duration-300';
+                voiceIcon.innerText = 'graphic_eq';
+                voiceStatusText.innerText = 'Listening';
+                conversationStatus.innerText = 'Listening';
                 micRing1.classList.remove('hidden');
                 micRing2.classList.remove('hidden');
             } else if (status === 'loading') {
-                recordBtn.className = "w-20 h-20 rounded-full bg-indigo-800/80 cursor-not-allowed transition-all flex justify-center items-center text-indigo-200 shadow-xl focus:outline-none";
-                recordIcon.innerText = "hourglass_top";
-                recordLabel.innerText = "Coach Thinking...";
-                avatarContainer.className = "w-36 h-36 rounded-full bg-gradient-to-tr from-indigo-800 to-indigo-600 flex flex-col justify-center items-center shadow-lg border-4 border-slate-800 z-10 animate-pulse duration-300";
-                voiceIcon.innerText = "psychology";
-                voiceStatusText.innerText = "Coach Thinking";
+                recordBtn.className = 'w-20 h-20 rounded-full bg-indigo-800/80 cursor-not-allowed transition-all flex justify-center items-center text-indigo-200 shadow-xl focus:outline-none';
+                recordIcon.innerText = 'hourglass_top';
+                recordLabel.innerText = 'Coach Thinking...';
+                avatarContainer.className = 'w-36 h-36 rounded-full bg-gradient-to-tr from-indigo-800 to-indigo-600 flex flex-col justify-center items-center shadow-lg border-4 border-slate-800 z-10 animate-pulse duration-300';
+                voiceIcon.innerText = 'psychology';
+                voiceStatusText.innerText = 'Processing';
+                conversationStatus.innerText = 'Processing';
+                micRing1.classList.add('hidden');
+                micRing2.classList.add('hidden');
+            } else if (status === 'speaking') {
+                recordBtn.className = 'w-20 h-20 rounded-full bg-slate-700 transition-all flex justify-center items-center text-slate-300 shadow-xl focus:outline-none';
+                recordIcon.innerText = 'volume_up';
+                recordLabel.innerText = 'AI Speaking';
+                avatarContainer.className = 'w-36 h-36 rounded-full bg-gradient-to-tr from-emerald-600 to-teal-500 flex flex-col justify-center items-center shadow-lg shadow-emerald-500/20 border-4 border-slate-800 z-10 scale-105 duration-300';
+                voiceIcon.innerText = 'record_voice_over';
+                voiceStatusText.innerText = 'AI Speaking';
+                conversationStatus.innerText = 'AI Speaking';
+                micRing1.classList.add('hidden');
+                micRing2.classList.add('hidden');
+            } else if (status === 'paused') {
+                recordBtn.className = 'w-20 h-20 rounded-full bg-slate-700 hover:bg-slate-600 active:scale-95 transition-all flex justify-center items-center text-white shadow-xl focus:outline-none';
+                recordIcon.innerText = 'mic';
+                recordLabel.innerText = state.continuousActive ? 'Paused... restarting' : 'Tap to Speak';
+                avatarContainer.className = 'w-36 h-36 rounded-full bg-gradient-to-tr from-slate-700 to-slate-600 flex flex-col justify-center items-center shadow-lg border-4 border-slate-800 z-10 duration-300';
+                voiceIcon.innerText = 'pause';
+                voiceStatusText.innerText = 'Paused';
+                conversationStatus.innerText = state.continuousActive ? 'Paused' : 'Conversation Stopped';
                 micRing1.classList.add('hidden');
                 micRing2.classList.add('hidden');
             } else {
-                recordBtn.className = "w-20 h-20 rounded-full bg-indigo-600 hover:bg-indigo-500 active:scale-95 transition-all flex justify-center items-center text-white shadow-xl shadow-indigo-600/30 focus:outline-none";
-                recordIcon.innerText = "mic";
-                recordLabel.innerText = "Tap to Speak";
-                avatarContainer.className = "w-36 h-36 rounded-full bg-gradient-to-tr from-indigo-600 to-violet-500 flex flex-col justify-center items-center shadow-lg shadow-indigo-500/20 border-4 border-slate-800 z-10 duration-300";
-                voiceIcon.innerText = "smart_toy";
-                voiceStatusText.innerText = "AI Silent";
+                recordBtn.className = 'w-20 h-20 rounded-full bg-indigo-600 hover:bg-indigo-500 active:scale-95 transition-all flex justify-center items-center text-white shadow-xl shadow-indigo-600/30 focus:outline-none';
+                recordIcon.innerText = 'mic';
+                recordLabel.innerText = state.continuousMode ? 'Push to Talk available when stopped' : 'Tap to Speak';
+                avatarContainer.className = 'w-36 h-36 rounded-full bg-gradient-to-tr from-indigo-600 to-violet-500 flex flex-col justify-center items-center shadow-lg shadow-indigo-500/20 border-4 border-slate-800 z-10 duration-300';
+                voiceIcon.innerText = 'smart_toy';
+                voiceStatusText.innerText = 'Conversation Stopped';
+                conversationStatus.innerText = 'Conversation Stopped';
                 micRing1.classList.add('hidden');
                 micRing2.classList.add('hidden');
             }
+            updateConversationModeUI();
         }
 
-        // Native Browser Text-to-Speech Utterance
-        function speakText(text) {
-            // Cancel active speak tasks
-            window.speechSynthesis.cancel();
-            
-            const utterance = new SpeechSynthesisUtterance(text);
-            utterance.lang = 'en-US';
-            
-            // Pick a high-quality default English voice (Samantha, Google US English, etc.)
-            const voices = window.speechSynthesis.getVoices();
-            const premiumVoice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Samantha') || v.name.includes('Zira')));
-            if (premiumVoice) {
-                utterance.voice = premiumVoice;
-            }
-            
-            // Visual indicators when reading
-            utterance.onstart = () => {
-                avatarContainer.classList.add('scale-105');
-                voiceStatusText.innerText = "Coach speaking";
-            };
-            utterance.onend = () => {
-                avatarContainer.classList.remove('scale-105');
-                if (state.recordingState === 'idle') {
-                    voiceStatusText.innerText = "AI Silent";
+        function pickCoachVoice() {
+            const voices = window.speechSynthesis?.getVoices?.() || [];
+            const preferredLang = state.accent;
+            return voices.find(v => v.lang === preferredLang && /natural|google|samantha|zira|daniel|karen/i.test(v.name))
+                || voices.find(v => v.lang === preferredLang)
+                || voices.find(v => v.lang?.startsWith(preferredLang.slice(0, 2)))
+                || null;
+        }
+
+        // TTS state: the microphone is stopped while coach audio is playing, then continuous mode resumes listening.
+        function speakText(text, options = {}) {
+            return new Promise((resolve) => {
+                if (!window.speechSynthesis || !text) {
+                    resolve();
+                    return;
                 }
-            };
-            
-            window.speechSynthesis.speak(utterance);
+
+                stopRecognition('tts');
+                window.speechSynthesis.cancel();
+
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = state.accent;
+                utterance.rate = state.speechRate;
+                const voice = pickCoachVoice();
+                if (voice) utterance.voice = voice;
+
+                utterance.onstart = () => setRecordingUIState('speaking');
+                utterance.onend = () => {
+                    setRecordingUIState(state.continuousActive ? 'paused' : 'idle');
+                    resolve();
+                    if (options.resumeListening && state.continuousActive) {
+                        setTimeout(() => startListening('continuous'), 350);
+                    }
+                };
+                utterance.onerror = () => {
+                    setRecordingUIState(state.continuousActive ? 'paused' : 'idle');
+                    resolve();
+                    if (options.resumeListening && state.continuousActive) {
+                        setTimeout(() => startListening('continuous'), 350);
+                    }
+                };
+
+                window.speechSynthesis.speak(utterance);
+            });
         }
 
         async function requestMicrophoneAccess() {
@@ -514,39 +767,75 @@
             stream.getTracks().forEach(track => track.stop());
         }
 
-        function showMicrophonePermissionError() {
-            liveSpeechBox.innerHTML = "<span class='text-rose-400 font-semibold'>Microphone access denied.</span> Please allow microphone access in Chrome, then tap the mic again.";
+        function showMicrophoneError(message) {
+            liveSpeechBox.innerHTML = `<span class='text-rose-400 font-semibold'>${message}</span>`;
             setRecordingUIState('idle');
+        }
+
+        // Continuous conversation loop: AI speaks first, then listen-submit-reply-repeat until stopped.
+        async function startContinuousConversation() {
+            if (state.continuousActive) return;
+            state.continuousActive = true;
+            state.continuousMode = true;
+            updateConversationModeUI();
+            const currentCoachLine = state.chatHistory[state.chatHistory.length - 1]?.role === 'coach'
+                ? state.chatHistory[state.chatHistory.length - 1].text
+                : scenarios[state.currentScenario].welcome;
+
+            if (state.autoSpeak) {
+                await speakText(currentCoachLine, { resumeListening: true });
+            } else {
+                setRecordingUIState('paused');
+                await startListening('continuous');
+            }
+        }
+
+        function stopContinuousConversation() {
+            state.continuousActive = false;
+            clearSilenceTimer();
+            stopRecognition('manual');
+            window.speechSynthesis?.cancel?.();
+            state.pendingTranscript = '';
+            setRecordingUIState('idle');
+            updateConversationModeUI();
         }
 
         // Tap Speech Handler
         recordBtn.addEventListener('click', async () => {
-            if (!recognition) {
-                // Fallback prompt input if Speech API is unavailable
-                const rawResponse = prompt("Please type your spoken reply below (Browser microphone speech API unavailable):");
-                if (rawResponse) processUserUtterance(rawResponse);
-                return;
-            }
-
+            if (state.recordingState === 'speaking') return;
             if (state.recordingState === 'listening') {
-                recognition.stop();
+                stopRecognition('submit');
                 return;
             }
+            if (state.recordingState !== 'idle' && state.recordingState !== 'paused') return;
+            await startListening('push');
+        });
 
-            if (state.recordingState !== 'idle') {
-                return;
-            }
-
-            try {
-                liveSpeechBox.innerText = "Requesting microphone access...";
-                await requestMicrophoneAccess();
-                recognition.start();
-            } catch (err) {
-                console.error('Microphone permission error:', err);
-                showMicrophonePermissionError();
+        continuousBtn.addEventListener('click', () => {
+            if (state.continuousActive) {
+                stopContinuousConversation();
+            } else {
+                startContinuousConversation();
             }
         });
 
+        conversationModeSelect.addEventListener('change', () => {
+            if (state.continuousActive) stopContinuousConversation();
+            updateConversationModeUI();
+        });
+
+        speechSpeedSelect.addEventListener('change', (e) => {
+            state.speechRate = Number(e.target.value) || 1;
+        });
+
+        accentSelector.addEventListener('change', (e) => {
+            state.accent = e.target.value;
+            configureRecognition();
+        });
+
+        silenceDurationSelect.addEventListener('change', (e) => {
+            state.silenceDuration = Number(e.target.value) || 2000;
+        });
         // Compile the conversation and reply back
         async function processUserUtterance(text) {
             // Add user turn to state
@@ -575,13 +864,18 @@
                 
                 // Auto speak
                 if (state.autoSpeak) {
-                    speakText(responseText);
+                    await speakText(responseText, { resumeListening: state.continuousActive });
+                } else if (state.continuousActive) {
+                    setTimeout(() => startListening('continuous'), 350);
                 }
 
             } catch (err) {
                 console.error("AI Coach dialogue compilation error:", err);
                 setRecordingUIState('idle');
                 appendChatBubble('AI Coach', "Sorry, I had trouble processing that voice clip. Could you please repeat that?", 'coach');
+                if (state.continuousActive && state.apiKey) {
+                    setTimeout(() => startListening('continuous'), 700);
+                }
             }
         }
 
@@ -797,7 +1091,10 @@
             // Populate voice settings fallback trigger
             if (window.speechSynthesis) {
                 window.speechSynthesis.getVoices();
+                window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
             }
+            configureRecognition();
+            updateConversationModeUI();
             resetSession();
         });
 
@@ -818,3 +1115,7 @@
     </script>
 
 </body></html>
+
+
+
+
